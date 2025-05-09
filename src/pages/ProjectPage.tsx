@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Filter } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import type { Todo } from "@/types";
 
@@ -22,7 +22,6 @@ export default function ProjectPage() {
   const [editingTodo, setEditingTodo] = useState<Todo | null>(null);
   const [showCompleted, setShowCompleted] = useState(true);
 
-  // 🛡️ Log warning if route param fails
   useEffect(() => {
     if (!projectId) {
       console.warn("⚠️ projectId is undefined from URL.");
@@ -133,10 +132,7 @@ export default function ProjectPage() {
                 <span className="text-sm text-muted-foreground">Show completed</span>
                 <Switch checked={showCompleted} onCheckedChange={setShowCompleted} />
               </div>
-              <Button variant="ghost" size="sm" className="text-muted-foreground">
-                <Filter className="h-4 w-4 mr-1" />
-                <span>Filter</span>
-              </Button>
+              {/* Filter removed */}
             </div>
           </div>
         </header>
@@ -182,7 +178,7 @@ export default function ProjectPage() {
         onSubmit={editingTodo ? handleUpdateTodo : handleAddTodo}
         initialData={editingTodo || undefined}
         title={editingTodo ? "Edit Task" : "New Task"}
-        projectId={project?.id || ""} // ✅ fallback to empty string if undefined
+        projectId={project?.id || ""}
       />
     </div>
   );

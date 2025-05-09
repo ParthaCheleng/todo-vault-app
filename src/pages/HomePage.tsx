@@ -3,6 +3,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useTodos } from "@/contexts/todo-context";
 import { ProjectCard } from "@/components/ProjectCard";
 import { CreateButton } from "@/components/CreateButton";
+import { TodoForm } from "@/components/TodoForm";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,30 +15,56 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LogOut, Bell } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { createProject, deleteProject } from "@/lib/supabase";
 
 export default function HomePage() {
   const { user, signOut } = useAuth();
-  const { projects, todos, loading, refetchProjects } = useTodos();
+  const {
+    projects,
+    todos,
+    loading,
+    addTodo,
+    addProject,
+    deleteProject: removeProject,
+    refetchProjects,
+  } = useTodos();
+  const [showTodoForm, setShowTodoForm] = useState(false);
   const [showProjectDialog, setShowProjectDialog] = useState(false);
   const [projectName, setProjectName] = useState("");
   const { toast } = useToast();
 
-  const handleCreateClick = () => {
-    setShowProjectDialog(true);
+  const handleAddTodo = async (todoData: any) => {
+    if (!projects[0]?.id) {
+      toast({
+        title: "Project not found",
+        description: "Please create a project before adding a task.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await addTodo({ ...todoData, project_id: projects[0].id });
+      setShowTodoForm(false);
+    } catch (error: any) {
+      toast({
+        title: "Failed to add task",
+        description: error.message || "Something went wrong.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleCreateProject = async () => {
     if (!projectName.trim()) return;
 
     try {
-      await createProject(projectName.trim());
-      await refetchProjects(); // ✅ Refetch immediately
+      await addProject(projectName.trim());
       setProjectName("");
       setShowProjectDialog(false);
-      toast({ title: "Project created" });
+      await refetchProjects();
     } catch (error: any) {
       toast({
         title: "Failed to create project",
@@ -47,24 +74,26 @@ export default function HomePage() {
     }
   };
 
-  const handleDeleteProject = async (projectId: string) => {
+  const handleDeleteProject = async (id: string) => {
     try {
-      await deleteProject(projectId);
+      await removeProject(id);
       await refetchProjects();
-      toast({ title: "Project deleted" });
     } catch (error: any) {
       toast({
         title: "Failed to delete project",
-        description: error.message || "Please try again.",
+        description: error.message,
         variant: "destructive",
       });
     }
   };
 
-  const todosByProjectId = projects.reduce((acc, project) => {
-    acc[project.id] = todos.filter(todo => todo.project_id === project.id);
-    return acc;
-  }, {} as Record<string, any[]>);
+  const handleCreateClick = () => {
+    if (!projects.length) {
+      setShowProjectDialog(true);
+    } else {
+      setShowTodoForm(true);
+    }
+  };
 
   if (loading) {
     return (
@@ -96,19 +125,14 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="text-muted-foreground">
-              <Bell className="h-5 w-5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => signOut()}
-              className="text-muted-foreground"
-            >
-              <LogOut className="h-5 w-5" />
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => signOut()}
+            className="text-muted-foreground"
+          >
+            <LogOut className="h-5 w-5" />
+          </Button>
         </header>
 
         {/* Project Grid */}
@@ -116,7 +140,7 @@ export default function HomePage() {
           {projects.map((project) => (
             <ProjectCard
               key={project.id}
-              project={{ ...project, todos: todosByProjectId[project.id] || [] }}
+              project={project}
               onDelete={() => handleDeleteProject(project.id)}
             />
           ))}
@@ -126,6 +150,15 @@ export default function HomePage() {
           </div>
         </div>
       </div>
+
+      {/* Task Form */}
+      <TodoForm
+        open={showTodoForm}
+        onClose={() => setShowTodoForm(false)}
+        onSubmit={handleAddTodo}
+        projectId={projects[0]?.id}
+        title="New Task"
+      />
 
       {/* Project Creation Dialog */}
       <Dialog open={showProjectDialog} onOpenChange={setShowProjectDialog}>
@@ -140,7 +173,10 @@ export default function HomePage() {
             className="bg-secondary"
           />
           <DialogFooter className="pt-4">
-            <Button onClick={() => setShowProjectDialog(false)} variant="outline">
+            <Button
+              onClick={() => setShowProjectDialog(false)}
+              variant="outline"
+            >
               Cancel
             </Button>
             <Button onClick={handleCreateProject} disabled={!projectName.trim()}>

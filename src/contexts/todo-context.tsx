@@ -12,6 +12,7 @@ import {
   deleteTodo,
   getProjects,
   createProject,
+  deleteProject,
 } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/contexts/auth-context";
@@ -29,7 +30,8 @@ type TodoContextType = {
   deleteTodo: (id: string) => Promise<void>;
   toggleComplete: (id: string, isCompleted: boolean) => Promise<Todo>;
   addProject: (name: string) => Promise<TodoProject>;
-  refetchProjects: () => Promise<void>; // ✅ added
+  deleteProject: (projectId: string) => Promise<void>; // ✅ added
+  refetchProjects: () => Promise<void>; // ✅ also useful to expose for live UI updates
 };
 
 const TodoContext = createContext<TodoContextType | undefined>(undefined);
@@ -41,61 +43,46 @@ export function TodoProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!user) {
-        setTodos([]);
-        setProjects([]);
-        setLoading(false);
-        return;
-      }
+  // 🧠 Fetch data
+  const fetchData = async () => {
+    if (!user) {
+      setTodos([]);
+      setProjects([]);
+      setLoading(false);
+      return;
+    }
 
-      try {
-        setLoading(true);
-        const [fetchedTodos, fetchedProjects] = await Promise.all([
-          getTodos(),
-          getProjects(),
-        ]);
-        setTodos(fetchedTodos);
-        setProjects(fetchedProjects);
-      } catch (error: any) {
-        toast({
-          title: "Failed to fetch data",
-          description: error.message,
-          variant: "destructive",
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [user, toast]);
-
-  // ✅ Refetch projects after add/delete
-  const refetchProjects = async () => {
     try {
-      const fetched = await getProjects();
-      setProjects(fetched);
+      setLoading(true);
+      const [fetchedTodos, fetchedProjects] = await Promise.all([
+        getTodos(),
+        getProjects(),
+      ]);
+      setTodos(fetchedTodos);
+      setProjects(fetchedProjects);
     } catch (error: any) {
       toast({
-        title: "Error refreshing projects",
+        title: "Failed to fetch data",
         description: error.message,
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
   };
 
+  useEffect(() => {
+    fetchData();
+  }, [user]);
+
+  // 🧩 CRUD Methods
   const addTodo = async (
     todo: Omit<Todo, "id" | "created_at" | "user_id">
   ) => {
     try {
       const newTodo = await createTodo(todo);
       setTodos((prev) => [newTodo, ...prev]);
-      toast({
-        title: "Success!",
-        description: "Todo added successfully",
-      });
+      toast({ title: "Todo added successfully" });
       return newTodo;
     } catch (error: any) {
       toast({
@@ -116,10 +103,7 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       setTodos((prev) =>
         prev.map((todo) => (todo.id === id ? updated : todo))
       );
-      toast({
-        title: "Updated",
-        description: "Todo updated successfully",
-      });
+      toast({ title: "Todo updated successfully" });
       return updated;
     } catch (error: any) {
       toast({
@@ -135,10 +119,7 @@ export function TodoProvider({ children }: { children: ReactNode }) {
     try {
       await deleteTodo(id);
       setTodos((prev) => prev.filter((todo) => todo.id !== id));
-      toast({
-        title: "Deleted",
-        description: "Todo deleted successfully",
-      });
+      toast({ title: "Todo deleted" });
     } catch (error: any) {
       toast({
         title: "Error",
@@ -156,15 +137,28 @@ export function TodoProvider({ children }: { children: ReactNode }) {
   const addProject = async (name: string): Promise<TodoProject> => {
     try {
       const newProject = await createProject(name);
-      await refetchProjects(); // ✅ refresh immediately
-      toast({
-        title: "Project created",
-        description: "New project successfully added",
-      });
+      setProjects((prev) => [newProject, ...prev]);
+      toast({ title: "Project created" });
       return newProject;
     } catch (error: any) {
       toast({
         title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  // ❌ Delete Project
+  const removeProject = async (projectId: string) => {
+    try {
+      await deleteProject(projectId);
+      setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      toast({ title: "Project deleted" });
+    } catch (error: any) {
+      toast({
+        title: "Error deleting project",
         description: error.message,
         variant: "destructive",
       });
@@ -183,7 +177,8 @@ export function TodoProvider({ children }: { children: ReactNode }) {
         deleteTodo: deleteTodoItem,
         toggleComplete,
         addProject,
-        refetchProjects, // ✅ provided to context
+        deleteProject: removeProject, // ✅ exposed to consumers
+        refetchProjects: fetchData,   // ✅ exposed for manual refetch
       }}
     >
       {children}
