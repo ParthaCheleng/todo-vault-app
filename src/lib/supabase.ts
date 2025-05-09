@@ -1,138 +1,160 @@
-
 import { createClient } from '@supabase/supabase-js';
-import type { Todo } from '@/types';
+import type { Todo, TodoProject } from '@/types';
 
-// For development purposes, we'll use temporary placeholders
-// These should be replaced with actual environment variables when connecting to Supabase
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder-project.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
-
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL!;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY!;
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Mock implementation for development without actual Supabase connection
-export const getTodos = async () => {
-  // Check if we're using the placeholder URL (no real Supabase connection)
-  if (supabaseUrl === 'https://placeholder-project.supabase.co') {
-    console.log('Using mock data - connect to Supabase for real data');
-    // Return mock data for development
-    return [
-      {
-        id: '1',
-        title: 'Learn React',
-        description: 'Study React hooks and context',
-        is_completed: false,
-        created_at: new Date().toISOString(),
-        user_id: 'mock-user-id'
-      },
-      {
-        id: '2',
-        title: 'Game App: Create UI design',
-        description: 'Design the main components',
-        is_completed: true,
-        created_at: new Date(Date.now() - 86400000).toISOString(),
-        user_id: 'mock-user-id'
-      },
-      {
-        id: '3',
-        title: 'Grocery Shopping',
-        description: 'Buy milk, eggs, and bread',
-        is_completed: false,
-        created_at: new Date(Date.now() - 172800000).toISOString(),
-        user_id: 'mock-user-id',
-        due_date: new Date(Date.now() + 86400000).toISOString()
-      }
-    ] as Todo[];
+// 🔐 Get current user
+export const getCurrentUser = async () => {
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user) {
+    console.error("Failed to get current user:", error?.message);
+    throw error || new Error("No user found");
   }
-  
-  // Real implementation to be used when connected to Supabase
-  const { data: todos, error } = await supabase
+  return data.user;
+};
+
+// 🔑 Auth
+export const login = async (email: string, password: string) => {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data;
+};
+
+export const signUp = async (email: string, password: string) => {
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) throw error;
+  return data;
+};
+
+export const logout = async () => {
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
+};
+
+//
+// ✅ TODO OPERATIONS
+//
+
+export const getTodos = async (): Promise<Todo[]> => {
+  const user = await getCurrentUser();
+
+  const { data, error } = await supabase
     .from('todos')
     .select('*')
+    .eq('user_id', user.id)
     .order('created_at', { ascending: false });
 
   if (error) {
-    console.error('Error fetching todos:', error);
+    console.error('Error fetching todos:', error.message);
     throw error;
   }
 
-  return todos as Todo[];
+  return data as Todo[];
 };
 
-export const createTodo = async (todo: Omit<Todo, 'id' | 'created_at' | 'user_id'>) => {
-  // Check if we're using the placeholder URL
-  if (supabaseUrl === 'https://placeholder-project.supabase.co') {
-    console.log('Using mock implementation - connect to Supabase for real data');
-    // Mock implementation
-    const newTodo: Todo = {
-      id: Math.random().toString(36).substring(2, 11),
-      ...todo,
-      created_at: new Date().toISOString(),
-      user_id: 'mock-user-id'
-    };
-    
-    return newTodo;
+export const createTodo = async (
+  todo: Omit<Todo, 'id' | 'created_at' | 'user_id'>
+): Promise<Todo> => {
+  const user = await getCurrentUser();
+
+  if (!todo.title || !todo.project_id) {
+    throw new Error("Title and project_id are required to create a todo.");
   }
-  
-  // Real implementation
+
   const { data, error } = await supabase
     .from('todos')
-    .insert([todo])
-    .select();
+    .insert([{ ...todo, user_id: user.id }])
+    .select()
+    .single();
 
   if (error) {
-    console.error('Error creating todo:', error);
+    console.error('Error creating todo:', error.message);
     throw error;
   }
 
-  return data[0] as Todo;
+  return data as Todo;
 };
 
-export const updateTodo = async (id: string, todo: Partial<Omit<Todo, 'id' | 'user_id'>>) => {
-  // Check if we're using the placeholder URL
-  if (supabaseUrl === 'https://placeholder-project.supabase.co') {
-    console.log('Using mock implementation - connect to Supabase for real data');
-    // Mock implementation
-    return {
-      id,
-      ...todo,
-      created_at: new Date().toISOString(),
-      user_id: 'mock-user-id',
-      title: todo.title || 'Updated Task',
-      is_completed: todo.is_completed !== undefined ? todo.is_completed : false
-    } as Todo;
-  }
-  
-  // Real implementation
+export const updateTodo = async (
+  id: string,
+  updates: Partial<Omit<Todo, 'id' | 'user_id'>>
+): Promise<Todo> => {
   const { data, error } = await supabase
     .from('todos')
-    .update(todo)
+    .update(updates)
     .eq('id', id)
-    .select();
+    .select()
+    .single();
 
   if (error) {
-    console.error('Error updating todo:', error);
+    console.error('Error updating todo:', error.message);
     throw error;
   }
 
-  return data[0] as Todo;
+  return data as Todo;
 };
 
-export const deleteTodo = async (id: string) => {
-  // Check if we're using the placeholder URL
-  if (supabaseUrl === 'https://placeholder-project.supabase.co') {
-    console.log('Using mock implementation - connect to Supabase for real data');
-    // Mock implementation - just return without doing anything
-    return;
-  }
-  
-  // Real implementation
+export const deleteTodo = async (id: string): Promise<void> => {
   const { error } = await supabase
     .from('todos')
     .delete()
     .eq('id', id);
 
   if (error) {
-    console.error('Error deleting todo:', error);
+    console.error('Error deleting todo:', error.message);
+    throw error;
+  }
+};
+
+//
+// ✅ PROJECT OPERATIONS
+//
+
+export const getProjects = async (): Promise<TodoProject[]> => {
+  const user = await getCurrentUser();
+
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*, todos(*)') // ✅ includes todos
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching projects:', error.message);
+    throw error;
+  }
+
+  return data as TodoProject[];
+};
+
+export const createProject = async (name: string): Promise<TodoProject> => {
+  const user = await getCurrentUser();
+
+  const { data, error } = await supabase
+    .from('projects')
+    .insert([{ name, user_id: user.id }])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating project:', error.message);
+    throw error;
+  }
+
+  return data as TodoProject;
+};
+
+// ❌ Delete a project and optionally cascade delete its todos
+export const deleteProject = async (projectId: string): Promise<void> => {
+  const { error } = await supabase
+    .from('projects')
+    .delete()
+    .eq('id', projectId);
+
+  if (error) {
+    console.error('Error deleting project:', error.message);
     throw error;
   }
 };

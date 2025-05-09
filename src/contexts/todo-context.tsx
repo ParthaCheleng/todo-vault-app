@@ -1,18 +1,35 @@
-
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { getTodos, createTodo, updateTodo, deleteTodo } from '@/lib/supabase';
-import { useToast } from '@/components/ui/use-toast';
-import { useAuth } from '@/contexts/auth-context';
-import type { Todo, TodoProject } from '@/types';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
+import {
+  getTodos,
+  createTodo,
+  updateTodo,
+  deleteTodo,
+  getProjects,
+  createProject,
+} from "@/lib/supabase";
+import { useToast } from "@/components/ui/use-toast";
+import { useAuth } from "@/contexts/auth-context";
+import type { Todo, TodoProject } from "@/types";
 
 type TodoContextType = {
   todos: Todo[];
   projects: TodoProject[];
   loading: boolean;
-  addTodo: (todo: Omit<Todo, 'id' | 'created_at' | 'user_id'>) => Promise<Todo>;
-  updateTodo: (id: string, todo: Partial<Omit<Todo, 'id' | 'user_id'>>) => Promise<Todo>;
+  addTodo: (todo: Omit<Todo, "id" | "created_at" | "user_id">) => Promise<Todo>;
+  updateTodo: (
+    id: string,
+    todo: Partial<Omit<Todo, "id" | "user_id">>
+  ) => Promise<Todo>;
   deleteTodo: (id: string) => Promise<void>;
   toggleComplete: (id: string, isCompleted: boolean) => Promise<Todo>;
+  addProject: (name: string) => Promise<TodoProject>;
+  refetchProjects: () => Promise<void>; // ✅ added
 };
 
 const TodoContext = createContext<TodoContextType | undefined>(undefined);
@@ -24,9 +41,8 @@ export function TodoProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  // Fetch todos when user changes
   useEffect(() => {
-    const fetchTodos = async () => {
+    const fetchData = async () => {
       if (!user) {
         setTodos([]);
         setProjects([]);
@@ -36,27 +52,15 @@ export function TodoProvider({ children }: { children: ReactNode }) {
 
       try {
         setLoading(true);
-        const fetchedTodos = await getTodos();
-        setTodos(fetchedTodos);
-
-        // Mock projects for now - in a real app you'd fetch from Supabase
-        setProjects([
-          {
-            id: '1',
-            name: 'Game App',
-            todos: fetchedTodos.filter(t => t.title.includes('Game')),
-            color: '#9D6EFF'
-          },
-          {
-            id: '2',
-            name: 'Groceries',
-            todos: fetchedTodos.filter(t => t.title.includes('Grocery')),
-            color: '#FFD966'
-          }
+        const [fetchedTodos, fetchedProjects] = await Promise.all([
+          getTodos(),
+          getProjects(),
         ]);
+        setTodos(fetchedTodos);
+        setProjects(fetchedProjects);
       } catch (error: any) {
         toast({
-          title: "Failed to fetch todos",
+          title: "Failed to fetch data",
           description: error.message,
           variant: "destructive",
         });
@@ -65,13 +69,29 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    fetchTodos();
+    fetchData();
   }, [user, toast]);
 
-  const addTodo = async (todo: Omit<Todo, 'id' | 'created_at' | 'user_id'>) => {
+  // ✅ Refetch projects after add/delete
+  const refetchProjects = async () => {
+    try {
+      const fetched = await getProjects();
+      setProjects(fetched);
+    } catch (error: any) {
+      toast({
+        title: "Error refreshing projects",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const addTodo = async (
+    todo: Omit<Todo, "id" | "created_at" | "user_id">
+  ) => {
     try {
       const newTodo = await createTodo(todo);
-      setTodos(prev => [newTodo, ...prev]);
+      setTodos((prev) => [newTodo, ...prev]);
       toast({
         title: "Success!",
         description: "Todo added successfully",
@@ -87,12 +107,17 @@ export function TodoProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updateTodoItem = async (id: string, todoUpdate: Partial<Omit<Todo, 'id' | 'user_id'>>) => {
+  const updateTodoItem = async (
+    id: string,
+    updates: Partial<Omit<Todo, "id" | "user_id">>
+  ) => {
     try {
-      const updated = await updateTodo(id, todoUpdate);
-      setTodos(prev => prev.map(todo => todo.id === id ? updated : todo));
+      const updated = await updateTodo(id, updates);
+      setTodos((prev) =>
+        prev.map((todo) => (todo.id === id ? updated : todo))
+      );
       toast({
-        title: "Success!",
+        title: "Updated",
         description: "Todo updated successfully",
       });
       return updated;
@@ -109,9 +134,9 @@ export function TodoProvider({ children }: { children: ReactNode }) {
   const deleteTodoItem = async (id: string) => {
     try {
       await deleteTodo(id);
-      setTodos(prev => prev.filter(todo => todo.id !== id));
+      setTodos((prev) => prev.filter((todo) => todo.id !== id));
       toast({
-        title: "Success!",
+        title: "Deleted",
         description: "Todo deleted successfully",
       });
     } catch (error: any) {
@@ -128,23 +153,48 @@ export function TodoProvider({ children }: { children: ReactNode }) {
     return updateTodoItem(id, { is_completed: isCompleted });
   };
 
-  const value = {
-    todos,
-    projects,
-    loading,
-    addTodo,
-    updateTodo: updateTodoItem,
-    deleteTodo: deleteTodoItem,
-    toggleComplete,
+  const addProject = async (name: string): Promise<TodoProject> => {
+    try {
+      const newProject = await createProject(name);
+      await refetchProjects(); // ✅ refresh immediately
+      toast({
+        title: "Project created",
+        description: "New project successfully added",
+      });
+      return newProject;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+      throw error;
+    }
   };
 
-  return <TodoContext.Provider value={value}>{children}</TodoContext.Provider>;
+  return (
+    <TodoContext.Provider
+      value={{
+        todos,
+        projects,
+        loading,
+        addTodo,
+        updateTodo: updateTodoItem,
+        deleteTodo: deleteTodoItem,
+        toggleComplete,
+        addProject,
+        refetchProjects, // ✅ provided to context
+      }}
+    >
+      {children}
+    </TodoContext.Provider>
+  );
 }
 
 export const useTodos = () => {
   const context = useContext(TodoContext);
   if (context === undefined) {
-    throw new Error('useTodos must be used within a TodoProvider');
+    throw new Error("useTodos must be used within a TodoProvider");
   }
   return context;
 };

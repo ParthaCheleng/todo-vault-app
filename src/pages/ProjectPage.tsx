@@ -1,5 +1,4 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTodos } from "@/contexts/todo-context";
 import { TodoItem } from "@/components/TodoItem";
@@ -10,31 +9,45 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Filter } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import type { Todo } from "@/types";
 
 export default function ProjectPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { projects, todos, loading, addTodo, updateTodo, deleteTodo, toggleComplete } = useTodos();
+  const { toast } = useToast();
+
   const [showTodoForm, setShowTodoForm] = useState(false);
   const [editingTodo, setEditingTodo] = useState<Todo | null>(null);
   const [showCompleted, setShowCompleted] = useState(true);
 
-  const project = projects.find(p => p.id === projectId);
-  
-  const projectTodos = todos.filter(todo => {
-    // In a real app, each todo would have a project_id field
-    // For now, we'll just check if the todo title contains the project name
-    return todo.title.includes(project?.name || "");
-  });
+  // 🛡️ Log warning if route param fails
+  useEffect(() => {
+    if (!projectId) {
+      console.warn("⚠️ projectId is undefined from URL.");
+    }
+  }, [projectId]);
 
-  const filteredTodos = showCompleted 
-    ? projectTodos 
-    : projectTodos.filter(todo => !todo.is_completed);
+  const project = projects.find((p) => p.id === projectId);
+  const projectTodos = todos.filter((todo) => todo.project_id === projectId);
 
-  const handleAddTodo = async (todoData: any) => {
-    await addTodo(todoData);
-    setShowTodoForm(false);
+  const filteredTodos = showCompleted
+    ? projectTodos
+    : projectTodos.filter((todo) => !todo.is_completed);
+
+  const handleAddTodo = async (todoData: Omit<Todo, "id" | "created_at" | "user_id">) => {
+    try {
+      await addTodo(todoData);
+      setShowTodoForm(false);
+      setEditingTodo(null);
+    } catch (error: any) {
+      toast({
+        title: "Failed to add task",
+        description: error.message || "Something went wrong.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleEditTodo = (todo: Todo) => {
@@ -42,12 +55,20 @@ export default function ProjectPage() {
     setShowTodoForm(true);
   };
 
-  const handleUpdateTodo = async (todoData: any) => {
-    if (editingTodo) {
-      await updateTodo(editingTodo.id, todoData);
-      setEditingTodo(null);
+  const handleUpdateTodo = async (updatedData: Partial<Omit<Todo, "id" | "user_id">>) => {
+    try {
+      if (editingTodo) {
+        await updateTodo(editingTodo.id, updatedData);
+        setEditingTodo(null);
+        setShowTodoForm(false);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Failed to update task",
+        description: error.message || "Something went wrong.",
+        variant: "destructive",
+      });
     }
-    setShowTodoForm(false);
   };
 
   if (loading) {
@@ -58,7 +79,6 @@ export default function ProjectPage() {
             <Skeleton className="h-8 w-8" />
             <Skeleton className="h-8 w-40" />
           </div>
-          
           <div className="space-y-4 mt-8">
             {[...Array(5)].map((_, i) => (
               <Skeleton key={i} className="h-20 rounded-xl" />
@@ -86,19 +106,18 @@ export default function ProjectPage() {
         {/* Header */}
         <header className="mb-6">
           <div className="flex items-center gap-4">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={() => navigate("/")} 
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate("/")}
               className="text-muted-foreground"
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            
             <h1 className="text-2xl font-semibold flex items-center gap-2">
-              <span 
-                className="w-4 h-4 rounded-full" 
-                style={{ backgroundColor: project.color || '#9D6EFF' }} 
+              <span
+                className="w-4 h-4 rounded-full"
+                style={{ backgroundColor: project.color || "#9D6EFF" }}
               />
               {project.name}
             </h1>
@@ -106,18 +125,14 @@ export default function ProjectPage() {
 
           <div className="flex items-center justify-between mt-6">
             <div className="text-sm text-muted-foreground">
-              {project.todos.length} {project.todos.length === 1 ? 'task' : 'tasks'}
+              {projectTodos.length} {projectTodos.length === 1 ? "task" : "tasks"}
             </div>
-            
+
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Show completed</span>
-                <Switch
-                  checked={showCompleted}
-                  onCheckedChange={setShowCompleted}
-                />
+                <Switch checked={showCompleted} onCheckedChange={setShowCompleted} />
               </div>
-              
               <Button variant="ghost" size="sm" className="text-muted-foreground">
                 <Filter className="h-4 w-4 mr-1" />
                 <span>Filter</span>
@@ -128,14 +143,14 @@ export default function ProjectPage() {
 
         <Separator className="my-4 bg-muted/20" />
 
-        {/* Todo List */}
+        {/* Task List */}
         <div className="space-y-3 mt-6">
           {filteredTodos.length > 0 ? (
-            filteredTodos.map(todo => (
+            filteredTodos.map((todo) => (
               <TodoItem
                 key={todo.id}
                 todo={todo}
-                onToggleComplete={toggleComplete}
+                onToggleComplete={(id, checked) => toggleComplete(id, checked)}
                 onDelete={deleteTodo}
                 onEdit={handleEditTodo}
               />
@@ -149,18 +164,25 @@ export default function ProjectPage() {
       </div>
 
       {/* Floating Add Button */}
-      <CreateButton 
-        onClick={() => { setEditingTodo(null); setShowTodoForm(true); }} 
+      <CreateButton
+        onClick={() => {
+          setEditingTodo(null);
+          setShowTodoForm(true);
+        }}
         variant="floating"
       />
 
-      {/* Todo Form Dialog */}
-      <TodoForm 
-        open={showTodoForm} 
-        onClose={() => { setShowTodoForm(false); setEditingTodo(null); }} 
-        onSubmit={editingTodo ? handleUpdateTodo : handleAddTodo} 
+      {/* Task Form */}
+      <TodoForm
+        open={showTodoForm}
+        onClose={() => {
+          setShowTodoForm(false);
+          setEditingTodo(null);
+        }}
+        onSubmit={editingTodo ? handleUpdateTodo : handleAddTodo}
         initialData={editingTodo || undefined}
         title={editingTodo ? "Edit Task" : "New Task"}
+        projectId={project?.id || ""} // ✅ fallback to empty string if undefined
       />
     </div>
   );

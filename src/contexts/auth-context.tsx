@@ -1,5 +1,10 @@
-
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from 'react';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/ui/use-toast';
 import type { User } from '@/types';
@@ -14,18 +19,19 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Check if we're using the placeholder Supabase URL
-const isUsingMock = supabase.supabaseUrl === 'https://placeholder-project.supabase.co';
+// Check if using Supabase placeholder
+const isUsingMock = import.meta.env.VITE_SUPABASE_URL?.includes('placeholder-project') ?? false;
+
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
+  // 🔄 Sync user state on session change
   useEffect(() => {
-    const getSession = async () => {
+    const syncUser = async () => {
       if (isUsingMock) {
-        // Check localStorage for mock auth
         const mockUser = localStorage.getItem('mockUser');
         if (mockUser) {
           setUser(JSON.parse(mockUser));
@@ -34,166 +40,157 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const { data } = await supabase.auth.getSession();
-      if (data.session?.user) {
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession();
+
+      if (error) console.error('Session fetch error:', error);
+
+      if (session?.user) {
         setUser({
-          id: data.session.user.id,
-          email: data.session.user.email || '',
-          avatar_url: data.session.user.user_metadata?.avatar_url,
+          id: session.user.id,
+          email: session.user.email || '',
+          avatar_url: session.user.user_metadata?.avatar_url,
         });
       }
+
       setLoading(false);
     };
 
-    getSession();
+    syncUser();
 
-    if (!isUsingMock) {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        if (session?.user) {
-          setUser({
-            id: session.user.id,
-            email: session.user.email || '',
-            avatar_url: session.user.user_metadata?.avatar_url,
-          });
-        } else {
-          setUser(null);
-        }
-        setLoading(false);
-      });
+    // ✅ Subscribe to auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email || '',
+          avatar_url: session.user.user_metadata?.avatar_url,
+        });
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
 
-      return () => {
-        subscription.unsubscribe();
-      };
-    }
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
+  // 📝 Sign Up
   const signUp = async (email: string, password: string) => {
     try {
       setLoading(true);
-      
+
       if (isUsingMock) {
-        // Mock signup - just simulate a delay
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        toast({
-          title: "Success!",
-          description: "Please check your email for verification",
-        });
+        await new Promise((r) => setTimeout(r, 500));
+        toast({ title: 'Success!', description: 'Mock signup complete' });
         return;
       }
-      
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-      
+
+      const { error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
-      
+
       toast({
-        title: "Success!",
-        description: "Please check your email for verification",
+        title: 'Check your inbox!',
+        description: 'Verification link sent to your email.',
       });
-    } catch (error: any) {
+    } catch (err: any) {
       toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
+        title: 'Signup Failed',
+        description: err?.message || 'Something went wrong.',
+        variant: 'destructive',
       });
-      throw error;
+      throw err;
     } finally {
       setLoading(false);
     }
   };
 
+  // 🔐 Sign In
   const signIn = async (email: string, password: string) => {
     try {
       setLoading(true);
-      
+
       if (isUsingMock) {
-        // Mock signin
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Create mock user
+        await new Promise((r) => setTimeout(r, 500));
         const mockUser = {
           id: 'mock-user-id',
           email,
-          avatar_url: undefined
+          avatar_url: undefined,
         };
-        
-        // Store in localStorage for persistence
         localStorage.setItem('mockUser', JSON.stringify(mockUser));
         setUser(mockUser);
-        
-        toast({
-          title: "Welcome back!",
-          description: "Successfully signed in",
-        });
+        toast({ title: 'Welcome back!', description: 'Mock login successful' });
         return;
       }
-      
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      
+
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      
+
+      toast({ title: 'Welcome back!', description: 'Successfully signed in.' });
+    } catch (err: any) {
       toast({
-        title: "Welcome back!",
-        description: "Successfully signed in",
+        title: 'Login Failed',
+        description: err?.message || 'Invalid credentials.',
+        variant: 'destructive',
       });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-      throw error;
+      throw err;
     } finally {
       setLoading(false);
     }
   };
 
+  // 🚪 Sign Out
   const signOut = async () => {
     try {
       setLoading(true);
-      
+
       if (isUsingMock) {
-        // Mock signout
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise((r) => setTimeout(r, 300));
         localStorage.removeItem('mockUser');
         setUser(null);
         return;
       }
-      
+
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+
       setUser(null);
-    } catch (error: any) {
+    } catch (err: any) {
       toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
+        title: 'Logout Failed',
+        description: err?.message || 'Unexpected error occurred.',
+        variant: 'destructive',
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const value = {
-    user,
-    loading,
-    signUp,
-    signIn,
-    signOut,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        signUp,
+        signIn,
+        signOut,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
+// 🔁 Hook to access AuthContext
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;

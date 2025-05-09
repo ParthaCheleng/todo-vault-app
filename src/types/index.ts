@@ -1,23 +1,30 @@
+// ===============================
+// ✅ Global Type Definitions
+// ===============================
 
+// Represents a single Todo item
 export type Todo = {
-  id: string;
-  title: string;
-  description?: string;
-  is_completed: boolean;
-  created_at: string;
-  user_id: string;
-  due_date?: string;
+  id: string;                     // Supabase UUID
+  title: string;                 // Task title (required)
+  description?: string;          // Optional task details
+  is_completed: boolean;         // Completion status
+  created_at: string;            // ISO timestamp
+  user_id: string;               // Owner's ID (from Supabase Auth)
+  project_id: string;            // Associated project ID (required)
+  due_date?: string | null;      // Optional due date (ISO format or null)
 };
 
+// Represents a Todo project/group
 export type TodoProject = {
-  id: string;
-  name: string;
-  todos: Todo[];
-  color?: string;
+  id: string;                    // Project UUID
+  name: string;                  // Project name
+  todos?: Todo[];                // Optional - lazy-loaded list of todos
+  color?: string;                // Optional - UI badge color
 };
 
+// Represents the authenticated user
 export type User = {
-  id: string;
-  email: string;
-  avatar_url?: string;
+  id: string;                    // Supabase user ID
+  email: string;                 // User email
+  avatar_url?: string | null;   // Optional avatar
 };
